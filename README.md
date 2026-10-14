@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="images/logo-white.png">
+    <img src="images/logo-black.png" alt="Skeleton Key" width="320">
+  </picture>
+</p>
+
 # Skeleton Key
 
 A posing and prop tool for Warhammer 40,000: Darktide.
