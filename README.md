@@ -67,3 +67,7 @@ The exported file needs nothing else, and Skeleton Key does not have to be insta
 Issues and pull requests are welcome.
 
 There is no build step. The mod is plain Lua that the game loads as it is.
+
+## Licence
+
+Skeleton Key is free software under the GNU General Public License v3.0. You may use, change and share it, and anything you share that is built from it must stay open under the same licence. See [LICENSE](LICENSE).
