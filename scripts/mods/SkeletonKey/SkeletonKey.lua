@@ -12,7 +12,7 @@ end
 
 local SK = G.SK or {}
 G.SK = SK
-SK.VERSION = "0.3.0-beta"
+SK.VERSION = "0.3.1"
 
 SK.now = function()
 	local ok, t = pcall(Application.time_since_launch)
