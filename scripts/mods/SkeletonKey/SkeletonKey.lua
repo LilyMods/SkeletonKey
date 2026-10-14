@@ -12,7 +12,7 @@ end
 
 local SK = G.SK or {}
 G.SK = SK
-SK.VERSION = "0.3.1"
+SK.VERSION = "0.4.0"
 
 SK.now = function()
 	local ok, t = pcall(Application.time_since_launch)
@@ -1120,14 +1120,81 @@ SK.guard_keybinds = function(dmf, hook)
 	end)
 end
 
+SK.chat_shut = function()
+	return SK.windows_open() > 0 and not SK.chat_let
+end
+
 SK.guard_chat = function(chat, hook)
 	hook(chat, "_start_chatting", function(func, ...)
-		if SK.windows_open() > 0 then
+		if SK.chat_shut() then
 			return
 		end
 
 		return func(...)
 	end)
+end
+
+SK.chat_parts = function()
+	local ok, chat, elements = pcall(function()
+		local ui = Managers.ui
+		local ce = ui and ui.ui_constant_elements and ui:ui_constant_elements()
+
+		return ce and ce.element and ce:element("ConstantElementChat"), ce
+	end)
+
+	if not ok then
+		return nil, nil
+	end
+
+	return chat, elements
+end
+
+mod.chat_typing = function()
+	return SK.blocked()
+end
+
+mod.chat_open = function()
+	local chat, elements = SK.chat_parts()
+
+	if not (chat and chat._start_chatting and chat.set_visible and elements.ui_renderer) then
+		return "Chat is not ready yet. Try again soon."
+	end
+
+	if SK.blocked() then
+		return nil
+	end
+
+	if not chat._is_visible then
+		G.chat_shown = true
+
+		pcall(chat.set_visible, chat, true)
+	end
+
+	SK.chat_let = true
+
+	local ok = pcall(chat._start_chatting, chat, elements:ui_renderer())
+
+	SK.chat_let = nil
+
+	if not (ok and SK.blocked()) then
+		return "Chat would not open. Try again."
+	end
+
+	return nil
+end
+
+SK.chat_tick = function(now)
+	if not G.chat_shown or (SK.blocked() and not now) then
+		return
+	end
+
+	G.chat_shown = nil
+
+	local _, elements = SK.chat_parts()
+
+	if elements then
+		elements._current_group_name = nil
+	end
 end
 
 if not G.chat_hooked then
@@ -8333,6 +8400,7 @@ mod.update = function(dt)
 	if mod.is_enabled and not mod:is_enabled() then
 		return
 	end
+	pcall(SK.chat_tick)
 	local t = SK.now()
 	SK.peek_tick()
 	if G.pose and G.pose.unit then
@@ -8358,6 +8426,7 @@ mod.on_disabled = function(initial_call)
 	end
 
 	pcall(SK.frames_flush)
+	pcall(SK.chat_tick, true)
 	pcall(mod.stop_playing)
 	pcall(mod.sk_pose, "clear")
 	pcall(mod.sk_hide, "all")

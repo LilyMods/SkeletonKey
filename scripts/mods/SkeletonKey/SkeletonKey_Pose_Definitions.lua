@@ -318,7 +318,7 @@ widget_definitions.held_path = UIWidget.create_definition({
 
 local SKG = rawget(_G, "__skeletonkey")
 local PHYS = SKG and SKG.SK and SKG.SK.phys
-local KEY_ROW_W = NOTE_TAG + 8 + 200 + (PHYS and 8 + NOTE_TAG or 0)
+local KEY_ROW_W = NOTE_TAG + 8 + 200 + (PHYS and 8 + NOTE_TAG or 0) + 8 + NOTE_TAG
 local KEY_ROW_X = (NOTE_W - KEY_ROW_W) * 0.5
 
 widget_definitions.note = UIWidget.create_definition({
@@ -337,6 +337,21 @@ button("marks", "Show Hidden Markers", KEY_ROW_X + NOTE_TAG + 8, 0, 200, NOTE_H,
 
 if PHYS then
 	widget_definitions.button_phys = PHYS.widget(UIWidget, rect, text, KEY_ROW_X + NOTE_TAG + 216, NOTE_TAG, NOTE_H)
+end
+
+do
+	local x = KEY_ROW_X + KEY_ROW_W - NOTE_TAG
+
+	widget_definitions.button_chat = UIWidget.create_definition({
+		{
+			pass_type = "hotspot",
+			content_id = "hotspot",
+			style = { size = { NOTE_TAG, NOTE_H }, offset = { x, 0, 4 } },
+		},
+		rect("face", { 255, 26, 24, 22 }, { NOTE_TAG, NOTE_H }, { x, 0, 1 }),
+		rect("bar", { 255, 230, 220, 195 }, { NOTE_TAG, 2 }, { x, 0, 2 }),
+		text("CHAT", "label", { NOTE_TAG, NOTE_H }, { x, 0, 3 }, { 255, 141, 148, 160 }, 14, "center", "machine_medium"),
+	}, "note")
 end
 
 local SHEET = {
@@ -1180,7 +1195,7 @@ widget_definitions.rename_input = UIWidget.create_definition(rename_passes, "ren
 
 widget_definitions.path_input = UIWidget.create_definition(table.clone(input_passes), "path_field", {
 	input_text = "",
-	placeholder_text = "Unit path",
+	placeholder_text = "Unit Path",
 	max_length = 200,
 	is_writing = false,
 })

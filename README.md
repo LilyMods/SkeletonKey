@@ -32,6 +32,8 @@ Escape hides the panels, and a second Escape closes the tool and brings the came
 
 Hold K to see every key.
 
+Press CHAT on the bottom row to type in chat, or run a /command, without closing the tool.
+
 Your work is saved in `%APPDATA%\Fatshark\Darktide\SkeletonKey`, beside the game's own settings, so updating the mod never touches it.
 
 ## Spawning by path

@@ -559,6 +559,14 @@ SkeletonKeyPoseView._list_keys = function (self)
 		return
 	end
 
+	if self:_chatting() then
+		for _, index in pairs(HOT_KEYS) do
+			self:_fresh_key(index)
+		end
+
+		return
+	end
+
 	if self:_fresh_key(KEY_ENTER) and widgets.path_input.content.is_writing then
 		self:_spawn_path()
 	end
@@ -656,7 +664,25 @@ end
 SkeletonKeyPoseView._typing = function (self)
 	local widgets = self._widgets_by_name
 
-	return widgets.input.content.is_writing or widgets.path_input.content.is_writing
+	return widgets.input.content.is_writing or widgets.path_input.content.is_writing or self:_chatting()
+end
+
+SkeletonKeyPoseView._chatting = function (self)
+	return mod.chat_typing ~= nil and mod.chat_typing() == true
+end
+
+SkeletonKeyPoseView._chat = function (self)
+	local widgets = self._widgets_by_name
+
+	self._edit = nil
+	widgets.input.content.is_writing = false
+	widgets.path_input.content.is_writing = false
+
+	local said = mod.chat_open and mod.chat_open()
+
+	if said then
+		self:_say(said, "obj")
+	end
 end
 
 SkeletonKeyPoseView._spawn_path = function (self)
@@ -716,6 +742,7 @@ local HINTS = {
 	grp_merge = "Join the picked groups into one group.",
 	grp_export = "A file another mod can place this from.",
 	marks = "Show or hide spawn points and other markers.",
+	chat = "Open chat to type a /command. Enter sends.",
 	hold_all = "Hold everything on the list together.",
 	set_save = "Save these keyframes as a set.",
 	jzero = "This joint's three dials back to zero.",
@@ -2154,6 +2181,14 @@ SkeletonKeyPoseView._buttons = function (self, input_service)
 			self:_say(mod.sk_marks(), "obj")
 		end
 
+		if self:_pressed(widgets.button_chat) then
+			self:_chat()
+		end
+
+		if PHYS and PHYS.press then
+			PHYS.press(self)
+		end
+
 
 		if self:_pressed(widgets.button_obj_back) then
 			self:_say(mod.sk_object("back"), "obj")
@@ -2750,7 +2785,7 @@ SkeletonKeyPoseView._fill_items = function (self, items, kept, obj)
 	local base = definitions.OBJ_PANEL_H
 	local say_y = definitions.OBJ_SAY_Y
 	local h = base
-	local empty = self._otab == "move" and not (SK and SK.object_alive())
+	local empty = (self._otab or "move") == "move" and not (SK and SK.object_alive())
 
 	place(widgets.button_obj_copy, empty and definitions.OBJ_EMPTY_COPY_AT or definitions.OBJ_COPY_AT)
 	place(widgets.button_obj_back, empty and definitions.OBJ_EMPTY_BACK_AT or definitions.OBJ_BACK_AT)
@@ -3494,6 +3529,15 @@ SkeletonKeyPoseView._fill = function (self)
 			show(widgets.keysheet, (held or hover) and not sliding or false)
 		end
 		show(widgets.button_marks, not sliding)
+		show(widgets.button_chat, not sliding)
+
+		if widgets.button_chat then
+			local on = self:_chatting()
+			local face, ink = widgets.button_chat.style.face.color, widgets.button_chat.style.label.text_color
+
+			face[2], face[3], face[4] = on and 230 or 26, on and 220 or 24, on and 195 or 22
+			ink[2], ink[3], ink[4] = on and 27 or 141, on and 29 or 148, on and 33 or 160
+		end
 
 		if PHYS then
 			PHYS.step(self, show, sliding)

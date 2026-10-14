@@ -173,6 +173,14 @@ phys.widget = function(UIWidget, rect, text, x, w, h)
 	}, "note")
 end
 
+phys.press = function(view)
+	local widget = view._widgets_by_name and view._widgets_by_name.button_phys
+
+	if widget and view:_pressed(widget) then
+		view:_say(mod.sk_phys("toggle"), "obj")
+	end
+end
+
 phys.step = function(view, show, sliding)
 	local widget = view._widgets_by_name and view._widgets_by_name.button_phys
 
@@ -181,10 +189,6 @@ phys.step = function(view, show, sliding)
 	end
 
 	show(widget, not sliding)
-
-	if view:_pressed(widget) then
-		view:_say(mod.sk_phys("toggle"), "obj")
-	end
 
 	local on = phys.wanted()
 	local face, ink = widget.style.face.color, widget.style.label.text_color
