@@ -5,13 +5,11 @@
   </picture>
 </p>
 
-# Skeleton Key
+<p align="center">A posing and prop tool for Warhammer 40,000: Darktide.</p>
 
-A posing and prop tool for Warhammer 40,000: Darktide.
+<p align="center">Pose any character in the world, keep their poses as keyframes and sets, move, copy and place the props around them, and fly the camera anywhere.</p>
 
-Pose any character in the world, keep their poses as keyframes and sets, move, copy and place the props around them, and fly the camera anywhere.
-
-**This is a beta.** Expect rough edges, and please report what you find.
+<p align="center"><b>This is a beta.</b> Expect rough edges, and please report what you find.</p>
 
 ## Install
 
