@@ -20,29 +20,21 @@
 
 ## Using it
 
-Open the panel with your key.
+Open the panel with your assigned key.
 
-Click a person to pose them. Each joint has three dials.
+Click a person to pose them.
 
-Click a prop to hold it in Object Key. Drag an arrow to slide it, and drag the ball to turn it.
+Click a prop to hold it in Object Key.
 
-Hold the right mouse button to fly the camera with WASD and the mouse. Shift doubles your speed and the wheel sets it.
+Hold the right mouse button to fly the camera with WASD and the mouse. Shift doubles your speed and mouse wheel adjusts it.
 
-Escape hides the panels, and a second Escape closes the tool and brings the camera home.
+Escape hides the panels, and a second Escape closes the tool and brings the camera back to your character.
 
-Hold K to see every key.
+Hold K to see every keybind and what it does.
 
-Press CHAT on the bottom row to type in chat, or run a /command, without closing the tool.
+Press CHAT to type in chat, or run a /command, without closing the tool.
 
-Your work is saved in `%APPDATA%\Fatshark\Darktide\SkeletonKey`, beside the game's own settings, so updating the mod never touches it.
-
-## Spawning by path
-
-On the Items page, type or paste a unit path into the box under Hold All and press Spawn or Enter.
-
-It appears where the middle of your screen is looking, already held.
-
-It only spawns if the level you are in has that unit loaded.
+Your work is saved in `%APPDATA%\Fatshark\Darktide\SkeletonKey`, beside the game's own settings, so updating the mod never deletes saved work.
 
 ## For mod makers
 
@@ -65,7 +57,7 @@ group.solid(mod, units)
 group.remove(units)
 ```
 
-`group.solid(mod, units)` makes the props block the player, even on servers you do not host. Pass your own mod object as `mod`. Leave the line out and they are decoration only.
+`group.solid(mod, units)` makes the props block the player, even on servers you do not host. Pass your own mod object as `mod`. Leave the line out and they are decoration with no collision on server instances.
 
 The exported file needs nothing else, and Skeleton Key does not have to be installed for it to work.
 
