@@ -7,7 +7,7 @@
 
 <p align="center">A posing and prop tool for Warhammer 40,000: Darktide.</p>
 
-<p align="center">Pose any character in the world, keep their poses as keyframes and sets, move, copy and place the props around them, and fly the camera anywhere.</p>
+<p align="center">Pose any character in the world, save their poses as keyframes and then as entire animation sets. Move, copy and place level props and export anything you make as files that your own mod can ship with.</p>
 
 <p align="center"><b>This is a beta.</b> Expect rough edges, and please report what you find.</p>
 
