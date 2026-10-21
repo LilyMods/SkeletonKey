@@ -554,6 +554,7 @@ SkeletonKeyPoseView._list_keys = function (self)
 		elseif self:_fresh_key(KEY_ESCAPE) then
 			self:_rename_close()
 			self:_say("Left as it was.")
+			self._escape_spent = true
 		end
 
 		return
@@ -724,13 +725,11 @@ local HINTS = {
 	frames_clear = "Delete every keyframe. It asks first.",
 	pose_rest = "Stand them plain, nothing playing.",
 	pose_clip = "Save what is playing as a keyframe.",
-	tape_back = "One frame back through the animation.",
-	tape_on = "One frame on through the animation.",
 	menu_flip = "This folder, played the other way round.",
 	menu_rename = "Rename this folder.",
 	menu_delete = "Delete this folder and everything in it.",
-	tape_key = "Add this frame as a keyframe, timed to match.",
-	tape_keyto = "Keys frames up to here. Scroll for how often.",
+	tape_key = "Key the frame under the red mark.",
+	tape_keyto = "Key every frame from green to red.",
 	obj_reset = "Back exactly where you found it.",
 	obj_drop = "Let it go, leaving it where it is.",
 	obj_add = "Save what you hold to the Items list.",
@@ -939,6 +938,24 @@ end
 
 SkeletonKeyPoseView._handle_input = function (self, input_service, dt, t)
 	if input_service:get("close_view") then
+		if self._escape_spent then
+			return
+		end
+
+		local typing = false
+
+		for _, name in ipairs({ "input", "path_input" }) do
+			local box = self._widgets_by_name[name] and self._widgets_by_name[name].content
+
+			if box and box.is_writing then
+				box.is_writing, typing = false, true
+			end
+		end
+
+		if typing then
+			return
+		end
+
 		if self._rename then
 			self:_rename_close()
 			self:_say("Left as it was.")
@@ -959,6 +976,16 @@ SkeletonKeyPoseView._handle_input = function (self, input_service, dt, t)
 end
 
 SkeletonKeyPoseView.update = function (self, dt, t, input_service)
+	local G = rawget(_G, "__skeletonkey")
+
+	self._escape_spent = nil
+
+	if G then
+		local ok, typing = pcall(self._typing, self)
+
+		G.view_typing = ok and typing == true or nil
+	end
+
 	if self._armed_at then
 		local G = rawget(_G, "__skeletonkey")
 		local pick = G and G.pick
@@ -1358,7 +1385,7 @@ SkeletonKeyPoseView._poses_page = function (self, input_service)
 	local notch = okw and axis and axis[2] or 0
 	local most = math.max(0, #list - POSE_ROWS)
 
-	local step = hovered(widgets.plate) and notch or 0
+	local step = hovered(widgets.plate) and not hovered(widgets.tape) and notch or 0
 
 	self._pose_top = math.max(0, math.min(most, self._pose_top - step))
 
@@ -1378,28 +1405,12 @@ SkeletonKeyPoseView._poses_page = function (self, input_service)
 		self:_say(mod.sk_keyframe("clip", self:_typed()))
 	end
 
-	if self:_pressed(widgets.button_tape_back) then
-		self:_say(mod.sk_tape("step", -1))
-	end
-
-	if self:_pressed(widgets.button_tape_on) then
-		self:_say(mod.sk_tape("step", 1))
-	end
-
 	if self:_pressed(widgets.button_tape_key) then
 		self:_say(mod.sk_tape("key", self:_typed()))
 	end
 
 	if self:_pressed(widgets.button_tape_keyto) then
-		self:_say(mod.sk_tape("keyto"))
-	end
-
-	do
-		local kt = widgets.button_tape_keyto
-
-		if kt and kt.content.hotspot.is_hover and notch ~= 0 then
-			self:_say(mod.sk_tape("stride", (pose.tape_stride or 2) + notch))
-		end
+		self:_say(mod.sk_tape("keyto", 1))
 	end
 
 	do
@@ -1532,6 +1543,10 @@ SkeletonKeyPoseView._world_click = function (self, input_service)
 
 	if self._hovering or over_panel then
 		self._gyro_hover = nil
+
+		if self._box and not left_held() then
+			self._box = nil
+		end
 
 		return
 	end
@@ -3665,20 +3680,20 @@ SkeletonKeyPoseView._fill = function (self)
 		local wide = along * definitions.TAPE_BAR_W
 
 		show(widgets.tape, poses and frames > 0)
-		show(widgets.button_tape_back, poses and frames > 0)
-		show(widgets.button_tape_on, poses and frames > 0)
-		show(widgets.button_tape_key, poses and frames > 0)
-		show(widgets.button_tape_keyto, poses and frames > 0)
-		widgets.button_tape_keyto.content.label = "Key " .. tostring(pose.tape_stride or 2) .. "s"
+		show(widgets.button_tape_key, poses and frames > 0 and not pose.taping)
+		show(widgets.button_tape_keyto, poses and frames > 0 and not pose.taping)
 
 		if widgets.tape then
 			local from = math.max(1, math.min(frames, pose.tape_in or 1))
 			local in_along = frames > 1 and (from - 1) / (frames - 1) or 0
 			local in_wide = in_along * definitions.TAPE_BAR_W
 
+			local fill = widgets.tape.style.tfill
+
 			widgets.tape.style.tcut.size[1] = in_wide
-			widgets.tape.style.tfill.offset[1] = definitions.TAPE_BAR_X + in_wide
-			widgets.tape.style.tfill.size[1] = math.max(0, wide - in_wide)
+			fill.offset[1] = definitions.TAPE_BAR_X + math.min(in_wide, wide)
+			fill.size[1] = math.abs(wide - in_wide)
+			paint(fill.color, wide >= in_wide and definitions.TAPE_ON or definitions.TAPE_BACK)
 			widgets.tape.style.tinknob.offset[1] = definitions.TAPE_BAR_X + in_wide - 4
 			if widgets.tape.style.inhot then
 				widgets.tape.style.inhot.offset[1] = definitions.TAPE_BAR_X + in_wide - 10
@@ -3833,6 +3848,16 @@ SkeletonKeyPoseView.on_exit = function (self)
 	end
 
 	self._widgets_by_name.path_input.content.is_writing = false
+
+	if mod.pose_state().released then
+		mod.sk_pose("release", "off")
+	end
+
+	local GT = rawget(_G, "__skeletonkey")
+
+	if GT then
+		GT.view_typing = nil
+	end
 
 	local G = rawget(_G, "__skeletonkey")
 

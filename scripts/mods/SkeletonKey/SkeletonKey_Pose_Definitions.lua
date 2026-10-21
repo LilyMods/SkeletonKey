@@ -95,7 +95,7 @@ local scenegraph_definition = {
 		parent = "screen",
 		horizontal_alignment = "center",
 		vertical_alignment = "top",
-		size = { 260, 70 },
+		size = { 384, 70 },
 		position = { 0, 16, 20 },
 	},
 	gyro = {
@@ -318,7 +318,7 @@ widget_definitions.held_path = UIWidget.create_definition({
 
 local SKG = rawget(_G, "__skeletonkey")
 local PHYS = SKG and SKG.SK and SKG.SK.phys
-local KEY_ROW_W = NOTE_TAG + 8 + 200 + (PHYS and 8 + NOTE_TAG or 0) + 8 + NOTE_TAG
+local KEY_ROW_W = NOTE_TAG + 8 + 200 + 8 + NOTE_TAG
 local KEY_ROW_X = (NOTE_W - KEY_ROW_W) * 0.5
 
 widget_definitions.note = UIWidget.create_definition({
@@ -334,10 +334,6 @@ widget_definitions.note = UIWidget.create_definition({
 }, "note")
 
 button("marks", "Show Hidden Markers", KEY_ROW_X + NOTE_TAG + 8, 0, 200, NOTE_H, nil, "note")
-
-if PHYS then
-	widget_definitions.button_phys = PHYS.widget(UIWidget, rect, text, KEY_ROW_X + NOTE_TAG + 216, NOTE_TAG, NOTE_H)
-end
 
 do
 	local x = KEY_ROW_X + KEY_ROW_W - NOTE_TAG
@@ -441,8 +437,8 @@ end
 local POSE_Y = LIST_Y + PAD + 30 + 12
 local POSE_ROWS = math.floor((H - FOOT_H - POSE_Y - PAD) / KEY_PITCH) - 1
 local TAPE_Y = POSE_Y + POSE_ROWS * KEY_PITCH
-local TAPE_BAR_X = PAD * 2 + 72
-local TAPE_BAR_W = W - PAD * 4 - 72 - 202
+local TAPE_BAR_X = PAD * 2
+local TAPE_BAR_W = W - PAD * 4 - 202
 
 for r = 1, POSE_ROWS do
 	local x = PAD * 2
@@ -462,10 +458,8 @@ button("pose_rest", "Rest", PAD * 2 + 190, LIST_Y + PAD, 60, 30)
 
 button("pose_clip", "Save Clip", PAD * 2 + 256, LIST_Y + PAD, 100, 30)
 
-button("tape_back", "<", PAD * 2, TAPE_Y + 2, 30, 24)
-button("tape_on", ">", PAD * 2 + 34, TAPE_Y + 2, 30, 24)
-button("tape_keyto", "Key To", W - PAD * 2 - 116, TAPE_Y + 2, 56, 24)
-button("tape_key", "Key", W - PAD * 2 - 54, TAPE_Y + 2, 54, 24)
+button("tape_keyto", "Key Range", W - PAD * 2 - 186, TAPE_Y + 2, 90, 24)
+button("tape_key", "Key Frame", W - PAD * 2 - 90, TAPE_Y + 2, 90, 24)
 
 widget_definitions.tape = UIWidget.create_definition({
 	{
@@ -545,8 +539,12 @@ end
 hidebutton("hide_this", "H", "Hide", 8, 92)
 hidebutton("show_all", "U", "Unhide", 108, 110)
 
+if PHYS then
+	widget_definitions.button_phys = PHYS.widget(UIWidget, rect, text, 226, 150, 34)
+end
+
 widget_definitions.hide_note = UIWidget.create_definition({
-	text("", "label", { 260, 22 }, { 0, 38, 3 }, DIM, 12, "center"),
+	text("", "label", { 384, 22 }, { 0, 38, 3 }, DIM, 12, "center"),
 }, "hidebar")
 
 -- ───────────────────── ❀ ─────────────────────
@@ -664,6 +662,8 @@ local CHART_BONES = {
 local CHART_HEAD = 16
 local CHART_NAMES = {}
 
+local CHART_LINE = { 255, 110, 117, 130 }
+
 local function bar(style_id, ax, ay, bx, by, thick, color, z)
 	local dx, dy = bx - ax, by - ay
 	local len = math.max(1, math.sqrt(dx * dx + dy * dy))
@@ -706,19 +706,19 @@ do
 	end
 
 	local head, neck = at.j_head, at.j_neck
-	local passes = { bar("bone_0", head[1], head[2] + CHART_HEAD, neck[1], neck[2], 2, LINE, 2) }
+	local passes = { bar("bone_0", head[1], head[2] + CHART_HEAD, neck[1], neck[2], 2, CHART_LINE, 2) }
 
 	for i, b in ipairs(CHART_BONES) do
 		local a, c = at[b[1]], at[b[2]]
 
-		passes[#passes + 1] = bar("bone_" .. i, a[1], a[2], c[1], c[2], 2, LINE, 2)
+		passes[#passes + 1] = bar("bone_" .. i, a[1], a[2], c[1], c[2], 2, CHART_LINE, 2)
 	end
 
 	for s = 1, 16 do
 		local t0, t1 = (s - 1) / 16 * math.pi * 2, s / 16 * math.pi * 2
 
 		passes[#passes + 1] = bar("head_" .. s, head[1] + math.cos(t0) * CHART_HEAD, head[2] + math.sin(t0) * CHART_HEAD,
-			head[1] + math.cos(t1) * CHART_HEAD, head[2] + math.sin(t1) * CHART_HEAD, 2, LINE, 2)
+			head[1] + math.cos(t1) * CHART_HEAD, head[2] + math.sin(t1) * CHART_HEAD, 2, CHART_LINE, 2)
 	end
 
 	passes[#passes + 1] = text("L", "left", { 20, 16 }, { PAD * 2 + 4, CHART_Y - 24, 3 }, DIM, 12, "left")
@@ -1116,7 +1116,7 @@ for r = 1, KEY_ROWS do
 	}, "pose")
 
 	hot("hold_" .. r, x + 226, y + 2, 50, 24)
-	button("row" .. r .. "_over", "Update", x + 282, y + 2, 56, 24)
+	button("row" .. r .. "_over", "Replace", x + 282, y + 2, 56, 24)
 	button("row" .. r .. "_del", "×", x + w - 30, y + 2, 26, 24, RED)
 end
 
@@ -1193,7 +1193,17 @@ widget_definitions.rename_input = UIWidget.create_definition(rename_passes, "ren
 	is_writing = false,
 })
 
-widget_definitions.path_input = UIWidget.create_definition(table.clone(input_passes), "path_field", {
+local path_passes = table.clone(input_passes)
+
+for i = 1, #path_passes do
+	local pass = path_passes[i]
+
+	if pass.style_id == "display_text" or pass.style_id == "active_placeholder" then
+		pass.style.font_size, pass.style.font_type = 14, "proxima_nova_medium"
+	end
+end
+
+widget_definitions.path_input = UIWidget.create_definition(path_passes, "path_field", {
 	input_text = "",
 	placeholder_text = "Unit Path",
 	max_length = 200,
@@ -1244,6 +1254,8 @@ return {
 	OBJ_PANEL_H = OH,
 	TAPE_BAR_X = TAPE_BAR_X,
 	TAPE_BAR_W = TAPE_BAR_W,
+	TAPE_ON = GREEN,
+	TAPE_BACK = RED,
 	SCROLL_X = SCROLL_X,
 	SCROLL_Y = SCROLL_Y,
 	SCROLL_H = SCROLL_H,

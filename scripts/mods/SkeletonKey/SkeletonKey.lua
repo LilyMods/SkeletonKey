@@ -12,7 +12,7 @@ end
 
 local SK = G.SK or {}
 G.SK = SK
-SK.VERSION = "0.4.0"
+SK.VERSION = "0.5.0"
 
 SK.now = function()
 	local ok, t = pcall(Application.time_since_launch)
@@ -186,6 +186,9 @@ SK.compile = function(source, name)
 	local loader = (Mods and Mods.lua and Mods.lua.loadstring) or rawget(_G, "loadstring")
 	if not loader then
 		return nil, "no loadstring available"
+	end
+	if type(source) ~= "string" or string.byte(source, 1) == 27 then
+		return nil, "not Lua text"
 	end
 	local chunk, err = loader(source, name or "=sk")
 	if not chunk then
@@ -990,7 +993,7 @@ SK.wall_input = function(func, self, action_name, ...)
 	return w.cut and w.cut[action_name] or raw
 end
 
-SK.WALL_VERSION = 1
+SK.WALL_VERSION = 2
 
 return SK
 ]=]
@@ -1082,7 +1085,15 @@ local function keybind_is_ours(who)
 end
 
 SK.keybind_blocked = function(who, is_pressed)
-	return SK.keys_in and SK.windows_open() > 0 and not keybind_is_ours(who) and is_pressed ~= false
+	if not SK.keys_in or is_pressed == false then
+		return false
+	end
+
+	if keybind_is_ours(who) then
+		return G.view_typing == true
+	end
+
+	return SK.windows_open() > 0
 end
 
 SK.guard_keybinds = function(dmf, hook)
@@ -2196,7 +2207,8 @@ SK.paste_run = function(me)
 			local hit = hits[h]
 			local owned, unit = pcall(Actor.unit, hit[4])
 
-			if owned and unit and not SK.is_hidden(unit) and (not best or hit[2] < best[2]) then
+			if owned and unit and unit ~= me and not SK.unit_under(me, unit) and not SK.is_hidden(unit)
+				and (not best or hit[2] < best[2]) then
 				best = hit
 			end
 		end
@@ -2301,6 +2313,8 @@ SK.pose_release = function()
 	pose.frozen = nil
 	pose.anim = nil
 	pose.machine = nil
+	pose.released = nil
+	pose.taping = nil
 	pose.rest, pose.fixed, pose.play = nil, nil, nil
 	pose.leg = {}
 	SK.tape_clear()
@@ -2732,7 +2746,10 @@ SK.pose_refind = function(t)
 	pose.unit = best
 	find.world, find.since = world, nil
 	pose.bone, pose.leg, pose.rest, pose.frozen = {}, {}, nil, nil
+	pose.anim, pose.gun, pose.fixed = nil, nil, nil
+	pose.machine = SK.moved_machine and SK.moved_machine[best] or nil
 	pose.joints = SK.pose_joints(best)
+	pose.extra = SK.pose_extra(best)
 
 	for i = 1, #pose.joints do
 		local name = pose.joints[i]
@@ -2917,6 +2934,7 @@ SK.pose_tick = function(dt, t)
 	if not SK.pose_alive() then
 		pose.unit = nil
 		pose.bone = {}
+		pose.taping = nil
 
 		if not (pose.picked and pose.find) then
 			SK.pose_forget()
@@ -2999,13 +3017,15 @@ SK.pose_tick = function(dt, t)
 		local kept = pose.rest and pose.rest[name]
 		local idle = have[1] == 0 and have[2] == 0 and have[3] == 0
 			and want[1] == 0 and want[2] == 0 and want[3] == 0
+		local node = b.node or Unit.node(unit, name)
+
+		b.node = node
 		if idle and not frozen and not kept then
 			if b.held then
-				pcall(Unit.set_animation_bone_mode, unit, "position_and_rotation", Unit.node(unit, name))
+				pcall(Unit.set_animation_bone_mode, unit, "position_and_rotation", node)
 			end
 			b.held, b.base, b.wrote = nil, nil, nil
 		else
-			local node = Unit.node(unit, name)
 			local live = Unit.local_rotation(unit, node)
 			local lost = b.held and b.wrote and SK.pose_overwritten(b.wrote:unbox(), live, SK.POSE_SLACK)
 			local rest, sits = SK.blend_rest(name, t)
@@ -3025,7 +3045,11 @@ SK.pose_tick = function(dt, t)
 			if b.held then
 				local q = SK.pose_rot(b.base:unbox(), have[1], have[2], have[3])
 				pcall(Unit.set_local_rotation, unit, node, q)
-				b.wrote = QuaternionBox(q)
+				if b.wrote then
+					b.wrote:store(q)
+				else
+					b.wrote = QuaternionBox(q)
+				end
 				sits = sits or (pose.fixed and pose.fixed[name])
 				if sits then
 					pcall(Unit.set_local_position, unit, node, sits:unbox())
@@ -3057,12 +3081,11 @@ SK.extra_tick = function(unit, t)
 		end
 
 		local b = pose.bone[name] or {}
+		local node = b.node or Unit.node(unit, name)
 
-		pose.bone[name] = b
+		pose.bone[name], b.node = b, node
 
 		if want then
-			local node = Unit.node(unit, name)
-
 			if pcall(Unit.set_animation_bone_mode, unit, "ignore", node) then
 				b.held = true
 			end
@@ -3076,7 +3099,7 @@ SK.extra_tick = function(unit, t)
 				end
 			end
 		elseif b.held then
-			pcall(Unit.set_animation_bone_mode, unit, "position_and_rotation", Unit.node(unit, name))
+			pcall(Unit.set_animation_bone_mode, unit, "position_and_rotation", node)
 			b.held, b.wrote = nil, nil
 		end
 	end
@@ -3169,10 +3192,6 @@ end
 SK.FRAMES_IDLE = 0.5
 
 SK.frames_save = function()
-	while #pose.frames > SK.FRAME_CAP do
-		table.remove(pose.frames, 1)
-	end
-
 	local keep = {}
 
 	for i = 1, #pose.frames do
@@ -3372,6 +3391,9 @@ mod.sk_keyframe = function(what, key, extra)
 	local no_unit_ok = { folders = true, flip = true, loop = true, hold = true, delete = true, move = true, name = true, up = true }
 	if not pose.unit and not no_unit_ok[what] then return "Nobody is posed. Left-click a person first." end
 	if what == "save" then
+		if #pose.frames >= SK.FRAME_CAP then
+			return "The keyframe list is full. Delete some first."
+		end
 		local name = SK.unique_name(key ~= nil and tostring(key) or ("frame " .. (#pose.frames + 1)), SK.frame_names(), " ")
 		local f = { name = name, hold = tonumber(extra) or 2, dial = {} }
 		local baked, from, sits = SK.pose_bake()
@@ -3393,6 +3415,9 @@ mod.sk_keyframe = function(what, key, extra)
 	if what == "clip" then
 		if not pose.anim or not pose.anim.event then
 			return "Nothing is playing. Play an animation first."
+		end
+		if #pose.frames >= SK.FRAME_CAP then
+			return "The keyframe list is full. Delete some first."
 		end
 		local f = {
 			name = SK.unique_name(tostring(key or pose.anim.event), SK.frame_names(), " "),
@@ -3864,6 +3889,7 @@ SK.tape_record = function(event, machine, seconds)
 		return said, true
 	end
 
+	pose.play = nil
 	pose.leg = {}
 
 	seconds = tonumber(seconds)
@@ -3936,6 +3962,10 @@ SK.tape_key = function(name, quiet)
 		return "Nothing recorded yet. Play an animation first."
 	end
 
+	if #pose.frames >= SK.FRAME_CAP then
+		return "The keyframe list is full. Delete some first."
+	end
+
 	local i = pose.tape_i or 1
 	local frame = tape.frames[i]
 	local gap = tape.keyed_at and (i - tape.keyed_at) * tape.step or nil
@@ -3980,31 +4010,43 @@ SK.tape_key_to = function(stride)
 	local lo = math.max(1, math.min(#tape.frames, pose.tape_in or 1))
 	local to = math.max(1, math.min(#tape.frames, pose.tape_i or #tape.frames))
 	local back = lo > to
-	local keyed = tape.keyed_at and (back and tape.keyed_at <= lo or not back and tape.keyed_at >= lo) and tape.keyed_at or nil
+	local last = tape.range_end
+	local keyed = last and (back and last <= lo and last >= to or not back and last >= lo and last <= to) and last or nil
 	local from = keyed and (keyed + (back and -stride or stride)) or lo
 
 	if back and to > from or not back and to < from then
 		return "Nothing new to key. Move the bar past the last key."
 	end
 
+	local room = SK.FRAME_CAP - #pose.frames
+
+	if room <= 0 then
+		return "The keyframe list is full. Delete some first."
+	end
+
 	local n = 0
 	local i = from
 	local way = back and -stride or stride
 
-	while back and i >= to or not back and i <= to do
+	while (back and i >= to or not back and i <= to) and n < room do
 		SK.tape_seek(i)
 		SK.tape_key(nil, true)
 		n = n + 1
 		i = i + way
 	end
 
-	if tape.keyed_at ~= to then
+	if tape.keyed_at ~= to and n < room then
 		SK.tape_seek(to)
 		SK.tape_key(nil, true)
 		n = n + 1
 	end
 
+	tape.range_end = tape.keyed_at
 	SK.frames_save()
+
+	if tape.keyed_at ~= to then
+		return string.format("Added %s, then the keyframe list was full.", SK.count(n, "keyframe"))
+	end
 
 	return string.format("Added %s, %s to %ss.", SK.count(n, "keyframe"), back and "back" or "up", SK.num((to - 1) * tape.step))
 end
@@ -4093,7 +4135,12 @@ SK.poses = function(filter)
 	return out
 end
 
+SK.TAPE_BUSY = { seek = true, ["in"] = true, step = true, key = true, keyto = true }
+
 mod.sk_tape = function(what, a, b)
+	if pose.taping and SK.TAPE_BUSY[what] then
+		return "Still recording. Wait for it to finish."
+	end
 	if what == "record" then
 		if not a or a == "" then return "That row has no animation to play." end
 		return SK.tape_record(tostring(a), b and tostring(b) or nil, nil)
@@ -4115,6 +4162,8 @@ mod.sk_tape = function(what, a, b)
 		if pose.tape.keyed_at and pose.tape_in ~= pose.tape.keyed_at then
 			pose.tape.keyed_at = nil
 		end
+
+		pose.tape.range_end = nil
 
 		return string.format("from %ss", SK.num((pose.tape_in - 1) * pose.tape.step))
 	end
@@ -5550,11 +5599,11 @@ SK.gyro_drag = function(x, y)
 			return false
 		end
 
-		d = 1
+		local most = SK.OBJ_MOVE_MOST
 
-		object.move[1] = hold.move[1] + dx * d
-		object.move[2] = hold.move[2] + dy * d
-		object.move[3] = hold.move[3] + dz * d
+		object.move[1] = math.max(-most, math.min(most, hold.move[1] + dx))
+		object.move[2] = math.max(-most, math.min(most, hold.move[2] + dy))
+		object.move[3] = math.max(-most, math.min(most, hold.move[3] + dz))
 	else
 		local f = gyro.frame
 		local cx, cy = (f and f.ox) or hold.x0, (f and f.oy) or hold.y0
@@ -6085,7 +6134,7 @@ SK.hold_hideable = function()
 	for i = 1, #crew do
 		local u = crew[i].unit
 
-		if SK.alive(u) and not SK.is_hidden(u) and (SK.in_hub() or not SK.networked(u)) then
+		if SK.alive(u) and not SK.is_hidden(u) then
 			return true
 		end
 	end
@@ -6243,18 +6292,9 @@ mod.sk_hide = function(what, how)
 
 	if what == "this" then
 		local picked = SK.selected_units()
-		local asked = #picked
-
-		if not SK.in_hub() then
-			for p = #picked, 1, -1 do
-				if SK.networked(picked[p].unit) and not SK.is_hidden(picked[p].unit) then
-					table.remove(picked, p)
-				end
-			end
-		end
 
 		if #picked == 0 then
-			return asked > 0 and "That cannot be hidden in a mission." or "Nothing to hide. Click something, then H."
+			return "Nothing to hide. Click something, then H."
 		end
 
 		local shown = 0
@@ -6300,33 +6340,19 @@ mod.sk_hide = function(what, how)
 			end
 		end
 
-		local unit = picked[1].unit
+		if wanted then
+			local took = 0
 
-		if pick.unit and pick.unit ~= unit and SK.unit_under(unit, pick.unit) then
-			local ok, alive = pcall(Unit.alive, pick.unit)
-
-			if ok and alive then
-				local from = #parts + 1
-
-				pcall(Unit.set_unit_visibility, pick.unit, false)
-				parts[#parts + 1] = pick.unit
-				SK.gun_tree(pick.unit, parts)
-
-				if ghost and first.ghost then
-					local extra = {}
-
-					for i = from, #parts do
-						extra[#extra + 1] = parts[i]
-					end
-
-					for _, t in ipairs(SK.phys.take(extra)) do
-						first.ghost[#first.ghost + 1] = t
-					end
+			for i = 1, #SK.hidden do
+				if SK.hidden[i].press == SK.hide_press then
+					took = took + #(SK.hidden[i].ghost or {})
 				end
 			end
-		end
 
-		if wanted then
+			if ghost and took == 0 then
+				return string.format("Hid %s, but the game keeps collision.", SK.count(#parts, "part"))
+			end
+
 			return SK.phys.says(ghost, #parts, #SK.hidden)
 		end
 
@@ -6453,12 +6479,43 @@ SK.anim_read = function(kind, name)
 	if not fenv or not pcall(fenv, chunk, {}) then
 		return nil, "unreadable " .. kind
 	end
+	local dbg = rawget(_G, "debug")
+	local strings = getmetatable("")
+	local methods = strings and strings.__index
+
+	local compiler = rawget(_G, "jit")
+
+	if compiler and compiler.off then
+		pcall(compiler.off, chunk, true)
+	end
+
+	local limited = dbg and dbg.sethook and dbg.gethook() == nil
+
+	if limited then
+		dbg.sethook(function() error("too long") end, "", SK.READ_STEPS)
+	end
+
+	if strings then
+		strings.__index = {}
+	end
+
 	local loaded, t = pcall(chunk)
+
+	if strings then
+		strings.__index = methods
+	end
+
+	if limited then
+		dbg.sethook()
+	end
+
 	if not loaded or type(t) ~= "table" then
 		return nil, "unreadable " .. kind
 	end
 	return t
 end
+
+SK.READ_STEPS = 20000000
 
 SK.anim_write = function(kind, name, text)
 	if not SK.anim_name_ok(name) then
@@ -6659,15 +6716,25 @@ end
 --  Set Files
 -- ───────────────────── ❀ ─────────────────────
 
+SK.LUA_WORDS = {}
+
+for word in string.gmatch("and break do else elseif end false for function goto if in local nil not or repeat return then true until while", "%a+") do
+	SK.LUA_WORDS[word] = true
+end
+
+SK.joint_name_ok = function(j)
+	return type(j) == "string" and string.match(j, "^[%a_][%w_]*$") ~= nil and not SK.LUA_WORDS[j]
+end
+
 SK.set_rows = function(out, frames, groups)
 	for i = 1, #frames do
 		local f = frames[i]
 
 		local folder = groups and f.group and string.format(" group = %q,", f.group) or ""
 
-		out[#out + 1] = string.format("\t\t{ name = %q, hold = %s,%s dial = {", f.name, SK.fine(f.hold or 2, 4), folder)
+		out[#out + 1] = string.format("\t\t(function() return { name = %q, hold = %s,%s dial = {", f.name, SK.fine(f.hold or 2, 4), folder)
 		local joints = {}
-		for j in pairs(f.dial) do joints[#joints + 1] = j end
+		for j in pairs(f.dial) do if SK.joint_name_ok(j) then joints[#joints + 1] = j end end
 		table.sort(joints)
 		for _, j in ipairs(joints) do
 			local d = f.dial[j]
@@ -6684,7 +6751,7 @@ SK.set_rows = function(out, frames, groups)
 		if f.base then
 			local names = {}
 
-			for j in pairs(f.base) do names[#names + 1] = j end
+			for j in pairs(f.base) do if SK.joint_name_ok(j) then names[#names + 1] = j end end
 
 			table.sort(names)
 			out[#out + 1] = "		}, from = {"
@@ -6698,7 +6765,7 @@ SK.set_rows = function(out, frames, groups)
 		if f.sits then
 			local names = {}
 
-			for j in pairs(f.sits) do names[#names + 1] = j end
+			for j in pairs(f.sits) do if SK.joint_name_ok(j) then names[#names + 1] = j end end
 
 			table.sort(names)
 			out[#out + 1] = "		}, at = {"
@@ -6710,7 +6777,7 @@ SK.set_rows = function(out, frames, groups)
 			end
 		end
 
-		out[#out + 1] = "		}" .. anim .. " },"
+		out[#out + 1] = "		}" .. anim .. " } end)(),"
 	end
 end
 
@@ -6768,10 +6835,10 @@ SK.group_text = function(name, rows, level)
 
 	for i = 1, #rows do
 		local r = rows[i]
-		local size = r.size or { 1, 1, 1 }
+		local size = SK.numbers(r.size, 3) and r.size or { 1, 1, 1 }
 
 		out[#out + 1] = string.format("		{ key = %q, node = %d, at = { %s, %s, %s }, turn = { %s, %s, %s, %s }, size = { %s, %s, %s } },",
-			r.key, r.node or 1,
+			r.key, math.floor(tonumber(r.node) or 1),
 			SK.fine(r.at[1], 3), SK.fine(r.at[2], 3), SK.fine(r.at[3], 3),
 			SK.fine(r.turn[1], 4), SK.fine(r.turn[2], 4), SK.fine(r.turn[3], 4), SK.fine(r.turn[4], 4),
 			SK.fine(size[1], 3), SK.fine(size[2], 3), SK.fine(size[3], 3))
@@ -6917,6 +6984,40 @@ SK.group_rows = function()
 	return rows
 end
 
+SK.SIZE_LEAST, SK.SIZE_MOST = 0.001, 1000
+
+SK.size_fit = function(v)
+	return math.max(SK.SIZE_LEAST, math.min(SK.SIZE_MOST, tonumber(v) or 1))
+end
+
+SK.same_row = function(h, r)
+	if h.key ~= r.key then
+		return false
+	end
+
+	for a = 1, 3 do
+		if math.abs(h.at[a] - r.at[a]) >= 0.01 then
+			return false
+		end
+	end
+
+	local function upright(t)
+		if not SK.numbers(t, 4) or (t[1] == 0 and t[2] == 0 and t[3] == 0 and t[4] == 0) then
+			return { 0, 0, 0, 1 }
+		end
+
+		return t
+	end
+
+	local ht, rt = upright(h.turn), upright(r.turn)
+	local dot = ht[1] * rt[1] + ht[2] * rt[2] + ht[3] * rt[3] + ht[4] * rt[4]
+	local len = math.sqrt((ht[1] ^ 2 + ht[2] ^ 2 + ht[3] ^ 2 + ht[4] ^ 2) * (rt[1] ^ 2 + rt[2] ^ 2 + rt[3] ^ 2 + rt[4] ^ 2))
+	local hs, rs = SK.numbers(h.size, 3) and h.size or { 1, 1, 1 }, SK.numbers(r.size, 3) and r.size or { 1, 1, 1 }
+
+	return len > 0 and math.abs(dot) / len > 0.9999
+		and math.abs(hs[1] - rs[1]) < 0.001 and math.abs(hs[2] - rs[2]) < 0.001 and math.abs(hs[3] - rs[3]) < 0.001
+end
+
 SK.group_add = function(name)
 	if not SK.object_alive() then
 		return "Nothing is held to save. Click something first."
@@ -6988,8 +7089,7 @@ SK.group_add = function(name)
 			for j = 1, #had do
 				local h = had[j]
 
-				if h.key == r.key and math.abs(h.at[1] - r.at[1]) < 0.01 and math.abs(h.at[2] - r.at[2]) < 0.01
-					and math.abs(h.at[3] - r.at[3]) < 0.01 then
+				if SK.same_row(h, r) then
 					same = true
 				end
 			end
@@ -7077,8 +7177,7 @@ SK.group_merge = function(name, from)
 				for j = 1, #all do
 					local h = all[j]
 
-					if h.key == r.key and math.abs(h.at[1] - r.at[1]) < 0.01 and math.abs(h.at[2] - r.at[2]) < 0.01
-						and math.abs(h.at[3] - r.at[3]) < 0.01 then
+					if SK.same_row(h, r) then
 						same = true
 					end
 				end
@@ -7114,8 +7213,7 @@ SK.group_merge = function(name, from)
 			for j = 1, type(was) == "table" and SK.numbers(was.at, 3) and #all or 0 do
 				local h = all[j]
 
-				if h.key == was.key and math.abs(h.at[1] - was.at[1]) < 0.01 and math.abs(h.at[2] - was.at[2]) < 0.01
-					and math.abs(h.at[3] - was.at[3]) < 0.01 then
+				if SK.same_row(h, was) then
 					found = j
 
 					break
@@ -7300,7 +7398,11 @@ function group.place(world)
 			local oks, unit = pcall(World.spawn_unit_ex, world, thing.key, nil, at, turn)
 
 			if oks and unit then
-				local s = thing.size
+				local s = {}
+
+				for a = 1, 3 do
+					s[a] = math.max(0.001, math.min(1000, thing.size[a]))
+				end
 
 				if s[1] ~= 1 or s[2] ~= 1 or s[3] ~= 1 then
 					local okn, nodes = pcall(Unit.num_scene_graph_items, unit)
@@ -7411,7 +7513,7 @@ return group
 ]=]
 
 SK.export_text = function(name, things, level)
-	local title = level and (string.gsub(SK.level_title(level), "^The ", "")) or nil
+	local title = level and (string.gsub(string.gsub(SK.level_title(level), "%c", " "), "^The ", "")) or nil
 	local out = {
 		"-- " .. name .. (title and (" - " .. title) or ""),
 		"-- Made with Skeleton Key.",
@@ -7630,10 +7732,12 @@ SK.group_load = function(name)
 			SK.keep_add(unit, node)
 
 			if SK.numbers(r.size, 3) then
-				pcall(Unit.set_local_scale, unit, node, Vector3(r.size[1], r.size[2], r.size[3]))
-				SK.collide_built[unit] = r.size[1]
+				local sx, sy, sz = SK.size_fit(r.size[1]), SK.size_fit(r.size[2]), SK.size_fit(r.size[3])
 
-				if r.size[1] ~= 1 or r.size[2] ~= 1 or r.size[3] ~= 1 then
+				pcall(Unit.set_local_scale, unit, node, Vector3(sx, sy, sz))
+				SK.collide_built[unit] = sx
+
+				if sx ~= 1 or sy ~= 1 or sz ~= 1 then
 					SK.collide_pending[unit] = SK.now()
 				end
 			end
@@ -7667,26 +7771,32 @@ SK.set_load = function(name)
 		return nil, err
 	end
 	local frames = {}
-	for i = 1, #(t.frames or {}) do
-		local f = t.frames[i]
+	for i = 1, #(type(t.frames) == "table" and t.frames or {}) do
+		local f = type(t.frames[i]) == "table" and t.frames[i] or {}
 		local frame = { name = tostring(f.name or ("frame " .. i)), hold = SK.finite(f.hold, 2), dial = {},
 			group = type(f.group) == "string" and f.group ~= "" and f.group or nil }
 
-		for j, d in pairs(f.dial or {}) do
-			frame.dial[j] = { SK.finite(d[1], 0), SK.finite(d[2], 0), SK.finite(d[3], 0) }
+		for j, d in pairs(type(f.dial) == "table" and f.dial or {}) do
+			if SK.joint_name_ok(j) and type(d) == "table" then
+				frame.dial[j] = { SK.finite(d[1], 0), SK.finite(d[2], 0), SK.finite(d[3], 0) }
+			end
 		end
 		if type(f.from) == "table" then
 			frame.base = {}
 
 			for j, q in pairs(f.from) do
-				frame.base[j] = QuaternionBox(Quaternion.from_elements(SK.finite(q[1], 0), SK.finite(q[2], 0), SK.finite(q[3], 0), SK.finite(q[4], 1)))
+				if SK.joint_name_ok(j) and type(q) == "table" then
+					frame.base[j] = QuaternionBox(Quaternion.from_elements(SK.finite(q[1], 0), SK.finite(q[2], 0), SK.finite(q[3], 0), SK.finite(q[4], 1)))
+				end
 			end
 		end
 		if type(f.at) == "table" then
 			frame.sits = {}
 
 			for j, p in pairs(f.at) do
-				frame.sits[j] = Vector3Box(Vector3(SK.finite(p[1], 0), SK.finite(p[2], 0), SK.finite(p[3], 0)))
+				if SK.joint_name_ok(j) and type(p) == "table" then
+					frame.sits[j] = Vector3Box(Vector3(SK.finite(p[1], 0), SK.finite(p[2], 0), SK.finite(p[3], 0)))
+				end
 			end
 		end
 		if type(f.anim) == "table" and f.anim.event then
@@ -7708,6 +7818,9 @@ SK.play_list = function(unit, list, rate, release, loop)
 		local ok, alive = pcall(Unit.alive, unit)
 		if not ok or not alive then
 			return "ERR that unit is gone"
+		end
+		if not SK.pose_is_rig(unit) then
+			return "ERR that is not a person"
 		end
 		local hex = tostring(Unit.debug_name(unit)):match("%[(%x+)%]") or ""
 		SK.pose_target(unit, hex, "", true)
@@ -8498,6 +8611,35 @@ end
 mod:add_require_path("SkeletonKey/scripts/mods/SkeletonKey/SkeletonKey_Pose")
 mod:add_require_path("SkeletonKey/scripts/mods/SkeletonKey/SkeletonKey_Pose_Definitions")
 
+-- The Three Panels skin lives in its own two files; with either gone the
+-- view registers on the panel itself, as if the skin never was.
+SK.THREE = "SkeletonKey/scripts/mods/SkeletonKey/SkeletonKey_Three"
+
+SK.has_file = function(path)
+	local okf, f = pcall(function()
+		return Mods.lua.io.open("./../mods/" .. path .. ".lua", "r")
+	end)
+
+	if okf and f then
+		pcall(function() f:close() end)
+
+		return true
+	end
+
+	return false
+end
+
+SK.panel_path = function()
+	if SK.has_file(SK.THREE) and SK.has_file(SK.THREE .. "_Definitions") then
+		mod:add_require_path(SK.THREE)
+		mod:add_require_path(SK.THREE .. "_Definitions")
+
+		return SK.THREE
+	end
+
+	return "SkeletonKey/scripts/mods/SkeletonKey/SkeletonKey_Pose"
+end
+
 local function register(view_name, class_name, path, display)
 	mod:register_view({
 		view_name = view_name,
@@ -8525,7 +8667,7 @@ local function register(view_name, class_name, path, display)
 	})
 end
 
-register("skeletonkey_pose_view", "SkeletonKeyPoseView", "SkeletonKey/scripts/mods/SkeletonKey/SkeletonKey_Pose", "loc_skeletonkey_pose_view_display_name")
+register("skeletonkey_pose_view", "SkeletonKeyPoseView", SK.panel_path(), "loc_skeletonkey_pose_view_display_name")
 
 SK.PHYS = "SkeletonKey/scripts/mods/SkeletonKey/SkeletonKey_Phys"
 SK.phys = nil

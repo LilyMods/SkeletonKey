@@ -34,6 +34,10 @@ Hold K to see every keybind and what it does.
 
 Press CHAT to type in chat, or run a /command, without closing the tool.
 
+Include Collision, in the bar at the top, makes hiding or moving a prop take its collision with it. It works in games you host.
+
+Mod Options has a Panel Layout choice: Two Panels, or Three Panels.
+
 Your work is saved in `%APPDATA%\Fatshark\Darktide\SkeletonKey`, beside the game's own settings, so updating the mod never deletes saved work.
 
 ## For mod makers

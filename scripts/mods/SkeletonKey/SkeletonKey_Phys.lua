@@ -12,7 +12,7 @@ end
 
 local phys = {}
 
-phys.hint = "Include collision: H and moving take it too."
+phys.hint = "Collision follows what you hide and move."
 phys.placed_at = setmetatable({}, { __mode = "k" })
 
 phys.wanted = function(how)
@@ -57,7 +57,7 @@ phys.take = function(parts)
 		local unit = parts[i]
 		local okn, n = false, 0
 
-		if SK.alive(unit) then
+		if SK.alive(unit) and (SK.in_hub() or not SK.networked(unit)) then
 			okn, n = pcall(Unit.num_actors, unit)
 		end
 
@@ -147,17 +147,17 @@ mod.sk_phys = function(what)
 		pcall(mod.set, mod, "include_collision", on)
 
 		if not on then
-			return "Collision off: only the look changes."
+			return "Collision off: it stays where it was."
 		end
 
-		return phys.hosting() and "Collision on: H and moving take it too." or "Collision on, but only in games you host."
+		return phys.hosting() and "Collision on: hide and move take it." or "Collision on, but only when you host."
 	end
 
 	return phys.wanted() and "on" or "off"
 end
 
 -- ───────────────────── ❀ ─────────────────────
---  PHYS Tag
+--  Include Collision Button
 -- ───────────────────── ❀ ─────────────────────
 
 phys.widget = function(UIWidget, rect, text, x, w, h)
@@ -167,10 +167,10 @@ phys.widget = function(UIWidget, rect, text, x, w, h)
 			content_id = "hotspot",
 			style = { size = { w, h }, offset = { x, 0, 4 } },
 		},
-		rect("face", { 255, 26, 24, 22 }, { w, h }, { x, 0, 1 }),
-		rect("bar", { 255, 230, 220, 195 }, { w, 2 }, { x, 0, 2 }),
-		text("PHYS", "label", { w, h }, { x, 0, 3 }, { 255, 141, 148, 160 }, 14, "center", "machine_medium"),
-	}, "note")
+		rect("face", { 255, 26, 24, 22 }, { w, h }, { x, 0, 2 }),
+		rect("bar", { 255, 230, 220, 195 }, { w, 1 }, { x, h - 1, 3 }),
+		text("Include Collision", "label", { w, h }, { x, 0, 5 }, { 255, 141, 148, 160 }, 14, "center"),
+	}, "hidebar")
 end
 
 phys.press = function(view)
